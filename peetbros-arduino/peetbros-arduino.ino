@@ -24,7 +24,8 @@ Author: Lasse Karstensen <lasse.karstensen@gmail.com>, February 2015.
 #include <avr/power.h>
 #include <avr/sleep.h>
 
-#define SAMPLE_WINDOW 30
+#define SAMPLE_WINDOW 8
+#define REPORT_PERIOD 500
 
 struct sample {
   float rotation_took;
@@ -34,6 +35,7 @@ struct sample {
 
 volatile unsigned long last_rotation_at = millis();
 volatile unsigned sample_index = 0;
+unsigned long last_report = millis();
 
 void setup() {
   // Null everything out initially.
@@ -45,24 +47,14 @@ void setup() {
     else
       samples[i].prev = &samples[i - 1];
   }
+  
   Serial.begin(57600);
   pinMode(2, INPUT_PULLUP);
   pinMode(3, INPUT_PULLUP);
-  attachInterrupt(0, isr_rotated, FALLING); // normally closed.
+  attachInterrupt(0, isr_rotated, RISING); // normally closed.
   attachInterrupt(1, isr_direction, RISING); // normally open.
 }
 
-void do_sleep() {
-  // Enable power saving. Without any modifications is uses 0.255W/0.204W.
-  set_sleep_mode(SLEEP_MODE_IDLE);
-  power_adc_disable();
-  power_spi_disable();
-  power_twi_disable();
-  sleep_enable(); // just a flag.
-  sleep_mode();
-  // zZz here until an interrupt wakes us.
-  sleep_disable();
-}
 
 void print_debug(struct sample *s) {
   Serial.print(" since last rotation: ");
@@ -106,51 +98,45 @@ int norm_to_degrees(float norm) {
   return (td);
 }
 
-void compute_averages(byte depth, struct sample *avg) {
+void compute_averages(int depth, struct sample *avg) {
   struct sample *curr = &samples[sample_index];
-
-  for (int i = 0; i++; i < depth) {
+  int i;
+  for (i = 0; i++; i < depth) {
     avg->rotation_took += curr->rotation_took;
     avg->direction_latency += curr->direction_latency;
+    Serial.println();
+    Serial.print("rotation_took: ");
+    Serial.println(avg->rotation_took);
     curr = curr->prev;
+    if (curr == NULL) break;
   }
-  avg->rotation_took /= float(depth);
-  avg->direction_latency /= float(depth);
+  avg->rotation_took /= float(i);
+  avg->direction_latency /= float(i);
 }
-
-// All report periods in milliseconds.
-int report_period_min = 500;
-int report_period_max = 5000; // ms
-unsigned long last_report = millis();
 
 void loop() {
   // The interrupts will update the global counters. Report what we know when there is something new.
   unsigned long t0 = millis();
   struct sample averages;
 
-  //noInterrupts();
-  //compute_averages(3, &averages);
+  // noInterrupts();
+  compute_averages(5, &averages);
+  // interrupts();
   
-  //interrupts();
-
+  print_debug(&averages);
+  print_debug(&samples[sample_index]);
+  
   // magic constants everywhere. this is in knots.
   float current_windspeed = 1000.0 * (1.0 / averages.rotation_took);
   float normalised_direction = averages.direction_latency / averages.rotation_took;
-  /*
-      180 er 0.32?
+  /*  180 er 0.32?
       ca 210 var 0.41?
       ca 160 var 0.26
-      anta: 090 er 0.01?
-      */
-  //}
-  //print_debug(&averages);
-  //print_debug(&samples[sample_index]);
-  
-  output_nmea(norm_to_degrees(normalised_direction), current_windspeed);
-  delay(500);
-  // do_sleep();
-}
+      anta: 090 er 0.01? */  
+  // output_nmea(norm_to_degrees(normalised_direction), current_windspeed);
 
+  delay(REPORT_PERIOD - (millis() - t0));
+}
 
 void isr_rotated() {
   unsigned long now = millis();
@@ -161,10 +147,15 @@ void isr_rotated() {
     last_rotation_took = now + (ULONG_MAX - last_rotation_at);
   else
     last_rotation_took = now - last_rotation_at;
+    
   // I'd love to log this somewhere, but ISR...
   if (last_rotation_took < 0.0)
     last_rotation_took = 0.0;
 
+  // spurious interrupt? ignore it.
+  // (these are probably an artifact of the push button used for development)  
+  if (last_rotation_took < 2.01) return;
+ 
   last_rotation_at = now;
 
   if (sample_index + 1 < SAMPLE_WINDOW)
@@ -173,7 +164,7 @@ void isr_rotated() {
     sample_index = 0;
 
   samples[sample_index].rotation_took = last_rotation_took;
-  samples[sample_index].direction_latency = 0.0;
+  samples[sample_index].direction_latency = 0.0; // Clean out old value.
 }
 
 void isr_direction() {
@@ -186,6 +177,6 @@ void isr_direction() {
   else
     direction_latency = now - last_rotation_at;
 
-  samples[sample_index],direction_latency = direction_latency;
+  samples[sample_index].direction_latency = direction_latency;
 }
 
