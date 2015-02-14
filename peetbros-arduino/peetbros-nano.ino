@@ -11,49 +11,78 @@ be sure not to lose any events.
 Useful resources:
     http://arduino.cc/en/Tutorial/DigitalPins
     http://learn.parallax.com/reed-switch-arduino-demo
+    http://www.agrolan.co.il/UploadProductFiles/AWVPRO.pdf
+
+Remaining:
+* power saving, it uses ~40mA on an Uno now.
 
 Author: Lasse Karstensen <lasse.karstensen@gmail.com>, February 2015.
 */
 
 #include <limits.h>
 #include <assert.h>
+#include <avr/power.h>
+#include <avr/sleep.h>
 
-#define SAMPLE_WINDOW 10
+#define SAMPLE_WINDOW 30
 
 struct sample {
   float rotation_took;
   float direction_latency;
-};
-typedef struct sample sample_t;
+  struct sample *prev;
+} samples[SAMPLE_WINDOW];
 
 volatile unsigned long last_rotation_at = millis();
 volatile unsigned sample_index = 0;
-sample_t samples[SAMPLE_WINDOW];
 
 void setup() {
+  // Null everything out initially.
+  for (int i = 0; i < SAMPLE_WINDOW; i++) {
+    samples[i].rotation_took = 0.0;
+    samples[i].direction_latency = 0.0;
+    if (i == 0)
+      samples[i].prev = &samples[SAMPLE_WINDOW];
+    else
+      samples[i].prev = &samples[i - 1];
+  }
   Serial.begin(57600);
   pinMode(2, INPUT_PULLUP);
   pinMode(3, INPUT_PULLUP);
-  attachInterrupt(0, isr_rotated, RISING); // normally closed.
+  attachInterrupt(0, isr_rotated, FALLING); // normally closed.
   attachInterrupt(1, isr_direction, RISING); // normally open.
 }
 
-/*
-void print_debug() {
+void do_sleep() {
+  // Enable power saving. Without any modifications is uses 0.255W/0.204W.
+  set_sleep_mode(SLEEP_MODE_IDLE);
+  power_adc_disable();
+  power_spi_disable();
+  power_twi_disable();
+  sleep_enable(); // just a flag.
+  sleep_mode();
+  // zZz here until an interrupt wakes us.
+  sleep_disable();
+}
+
+void print_debug(struct sample *s) {
   Serial.print(" since last rotation: ");
   Serial.print(millis() - last_rotation_at);
-  Serial.print("ms; last duration: ");
-  Serial.print(last_rotation_took);
-  Serial.print("ms; last dir_latency: ");
-  Serial.print(direction_latency);
   Serial.print("ms; ");
- /*
-    Serial.println();
-    Serial.print(" speed=");
-    Serial.print(current_windspeed); // Implicit truncation to %.2f.
-    Serial.print(" direction=");
-    Serial.print(normalised_direction, 4);
-    */
+  Serial.print("sampleindex: "); Serial.print(sample_index);
+  Serial.print(" last duration: ");
+  Serial.print(s->rotation_took);
+  Serial.print("ms; last dir_latency: ");
+  Serial.print(s->direction_latency);
+  Serial.print("ms; ");
+  Serial.println();
+}
+/*
+   Serial.println();
+   Serial.print(" speed=");
+   Serial.print(current_windspeed); // Implicit truncation to %.2f.
+   Serial.print(" direction=");
+   Serial.print(normalised_direction, 4);
+   */
 //Serial.print("norm. dir: ");
 //Serial.println(float(direction_latency) / float(last_rotation_took));
 // 1166 av 1879ms er ca. 350 grader app.
@@ -77,6 +106,18 @@ int norm_to_degrees(float norm) {
   return (td);
 }
 
+void compute_averages(byte depth, struct sample *avg) {
+  struct sample *curr = &samples[sample_index];
+
+  for (int i = 0; i++; i < depth) {
+    avg->rotation_took += curr->rotation_took;
+    avg->direction_latency += curr->direction_latency;
+    curr = curr->prev;
+  }
+  avg->rotation_took /= float(depth);
+  avg->direction_latency /= float(depth);
+}
+
 // All report periods in milliseconds.
 int report_period_min = 500;
 int report_period_max = 5000; // ms
@@ -85,49 +126,31 @@ unsigned long last_report = millis();
 void loop() {
   // The interrupts will update the global counters. Report what we know when there is something new.
   unsigned long t0 = millis();
+  struct sample averages;
 
-  // If nothing new has happened, and we're still under the
-  if ((t0 - report_period_min) < last_report) {
-    Serial.println("Nothing new to report, sleeping one period");
-    delay(200);
-  } else {
+  //noInterrupts();
+  //compute_averages(3, &averages);
+  
+  //interrupts();
 
-    /*
-    if less than report_period_min since last output:
-      * store the new sample to aggregate numbers.
-      * return.
-    else:
-        * if report_period_max has passed since last output, output the last known numbers.
-    */
-    sample_t latest_sample;
-    noInterrupts();
-    latest_sample = samples[sample_index];
-    interrupts();
-    
-    // magic constants everywhere. this is in knots.
-    float current_windspeed = 1000.0 * (1.0 / latest_sample.rotation_took);
-    
-    float normalised_direction = latest_sample.direction_latency / latest_sample.rotation_took;
- 
-    /*
-      if (last_rotation_at >= last_report)) {
-        // Outdated sample.
-      } else {
-        print_debug();
-        /*
-        180 er 0.32?
-        ca 210 var 0.41?
-        ca 160 var 0.26
-        anta: 090 er 0.01?
-        */
-    //}
-
-    output_nmea(norm_to_degrees(normalised_direction), current_windspeed);
-
-    // sleep until the end of the second.
-    delay(report_period_min - (millis() - t0)); // XXX
-  }
+  // magic constants everywhere. this is in knots.
+  float current_windspeed = 1000.0 * (1.0 / averages.rotation_took);
+  float normalised_direction = averages.direction_latency / averages.rotation_took;
+  /*
+      180 er 0.32?
+      ca 210 var 0.41?
+      ca 160 var 0.26
+      anta: 090 er 0.01?
+      */
+  //}
+  //print_debug(&averages);
+  //print_debug(&samples[sample_index]);
+  
+  output_nmea(norm_to_degrees(normalised_direction), current_windspeed);
+  delay(500);
+  // do_sleep();
 }
+
 
 void isr_rotated() {
   unsigned long now = millis();
@@ -138,10 +161,10 @@ void isr_rotated() {
     last_rotation_took = now + (ULONG_MAX - last_rotation_at);
   else
     last_rotation_took = now - last_rotation_at;
-  // I'd love to log this somewhere, but ISR.
+  // I'd love to log this somewhere, but ISR...
   if (last_rotation_took < 0.0)
-      last_rotation_took = 0.0;
-      
+    last_rotation_took = 0.0;
+
   last_rotation_at = now;
 
   if (sample_index + 1 < SAMPLE_WINDOW)
@@ -149,7 +172,8 @@ void isr_rotated() {
   else
     sample_index = 0;
 
-  samples[sample_index] = {last_rotation_took, NULL};
+  samples[sample_index].rotation_took = last_rotation_took;
+  samples[sample_index].direction_latency = 0.0;
 }
 
 void isr_direction() {
@@ -161,8 +185,7 @@ void isr_direction() {
     direction_latency = now + (ULONG_MAX - last_rotation_at);
   else
     direction_latency = now - last_rotation_at;
-    
-  samples[sample_index] = { .rotation_took = samples[sample_index].rotation_took, 
-                            .direction_latency = direction_latency };
+
+  samples[sample_index],direction_latency = direction_latency;
 }
 
