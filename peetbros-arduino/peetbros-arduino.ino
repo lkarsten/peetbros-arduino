@@ -24,7 +24,7 @@ Author: Lasse Karstensen <lasse.karstensen@gmail.com>, February 2015.
 #include <limits.h>
 
 #define SAMPLE_WINDOW 8
-#define REPORT_PERIOD 500
+#define REPORT_PERIOD 1000
 
 struct sample {
   float rotation_took;
