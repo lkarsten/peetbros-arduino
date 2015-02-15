@@ -26,32 +26,35 @@ Author: Lasse Karstensen <lasse.karstensen@gmail.com>, February 2015.
 #define SAMPLE_WINDOW 8
 #define REPORT_PERIOD 1000
 
+// All time deltas are in milliseconds.
 struct sample {
-  float rotation_took;
-  float direction_latency;
+  int rotation_took;
+  int direction_latency;
   struct sample *prev;
-} samples[SAMPLE_WINDOW];
+};
+
+struct sample samples[SAMPLE_WINDOW];
 
 volatile unsigned long last_rotation_at = millis();
-volatile unsigned sample_index = 0;
+volatile unsigned int sample_index = 0;
 unsigned long last_report = millis();
 
 void setup() {
-  // Null everything out initially.
-  for (int i = 0; i < SAMPLE_WINDOW; i++) {
-    samples[i].rotation_took = 0.0;
-    samples[i].direction_latency = 0.0;
-    if (i == 0)
-      samples[i].prev = &samples[SAMPLE_WINDOW];
-    else
-      samples[i].prev = &samples[i - 1];
-  }
-
   Serial.begin(57600);
   pinMode(2, INPUT_PULLUP);
   pinMode(3, INPUT_PULLUP);
   attachInterrupt(0, isr_rotated, RISING); // normally closed.
   attachInterrupt(1, isr_direction, RISING); // normally open.
+
+  // Null everything out initially.
+  for (int i = 0; i < SAMPLE_WINDOW; i++) {
+    samples[i].rotation_took = 0;
+    samples[i].direction_latency = 0;
+    if (i == 0)
+      samples[i].prev = &samples[SAMPLE_WINDOW];
+    else
+      samples[i].prev = &samples[i - 1];
+  }
 }
 
 
@@ -67,15 +70,6 @@ void print_debug(struct sample *s) {
   Serial.print("ms; ");
   Serial.println();
 }
-/*
-   Serial.println();
-   Serial.print(" speed=");
-   Serial.print(current_windspeed); // Implicit truncation to %.2f.
-   Serial.print(" direction=");
-   Serial.print(normalised_direction, 4);
-   */
-//Serial.print("norm. dir: ");
-//Serial.println(float(direction_latency) / float(last_rotation_took));
 // 1166 av 1879ms er ca. 350 grader app.
 // 370 grader er
 //}
@@ -110,20 +104,35 @@ int norm_to_degrees(float norm) {
   return (td);
 }
 
+void debug_samples(struct sample samples[]) {
+    char foo[200];
+    int i;
+    for (i=0; i < SAMPLE_WINDOW; i++) {
+      snprintf((char *)&foo, 200, "%i %i %i meh", i, 
+         samples[i].rotation_took,
+         samples[i].direction_latency);
+      Serial.println(foo);
+    } 
+}
+
 void compute_averages(int depth, struct sample *avg) {
+  // Remember to disable interrupts before calling.
   struct sample *curr = &samples[sample_index];
+  
   int i;
-  for (i = 0; i++; i < depth) {
-    avg->rotation_took += curr->rotation_took;
+  //for (i = 0; i < SAMPLE_WINDOW; i++) {
+  //  Serial.print(i);
+  //  debug_samples();
+    /*avg->rotation_took += curr->rotation_took;
     avg->direction_latency += curr->direction_latency;
-    Serial.println();
-    Serial.print("rotation_took: ");
-    Serial.println(avg->rotation_took);
+    
     curr = curr->prev;
     if (curr == NULL) break;
-  }
-  avg->rotation_took /= float(i);
-  avg->direction_latency /= float(i);
+    */
+  //}
+  // Serial.println(i);
+  // avg->rotation_took /= float(i);
+  // avg->direction_latency /= float(i);
 }
 
 
@@ -132,22 +141,24 @@ void loop() {
   unsigned long t0 = millis();
   struct sample averages;
 
+  debug_samples(samples);
   // noInterrupts();
-  compute_averages(5, &averages);
+  // compute_averages(3, &averages);
   // interrupts();
-
-  print_debug(&averages);
+  // averages = samples[sample_index];
   print_debug(&samples[sample_index]);
+  print_debug(&samples[sample_index-1]);
+  
+  //print_debug(&samples[sample_index]);
 
   // magic constants everywhere. this is in knots.
-  float current_windspeed = 1000.0 * (1.0 / averages.rotation_took);
-  float normalised_direction = averages.direction_latency / averages.rotation_took;
+  //float current_windspeed = 1000.0 * (1.0 / averages.rotation_took);
+  //float normalised_direction = averages.direction_latency / averages.rotation_took;
   /*  180 er 0.32?
       ca 210 var 0.41?
       ca 160 var 0.26
-      anta: 090 er 0.01? */  
-  // output_nmea(norm_to_degrees(normalised_direction), current_windspeed);
-
+      anta: 090 er 0.01? */
+  //output_nmea(norm_to_degrees(normalised_direction), current_windspeed);
   delay(REPORT_PERIOD - (millis() - t0));
 }
 
@@ -161,13 +172,13 @@ void isr_rotated() {
   else
     last_rotation_took = now - last_rotation_at;
 
-  // I'd love to log this somewhere, but ISR...
-  if (last_rotation_took < 0.0)
-    last_rotation_took = 0.0;
+  // I'd love to log this somewhere, but no Serial in ISR.
+  if (last_rotation_took < 0)
+    last_rotation_took = 0;
 
   // spurious interrupt? ignore it.
   // (these are probably an artifact of the push button used for development)
-  if (last_rotation_took < 2.01) return;
+  if (last_rotation_took < 2) return;
 
   last_rotation_at = now;
 
@@ -177,7 +188,7 @@ void isr_rotated() {
     sample_index = 0;
 
   samples[sample_index].rotation_took = last_rotation_took;
-  samples[sample_index].direction_latency = 0.0; // Clean out old value.
+  samples[sample_index].direction_latency = 0; // Clean out old value.
 }
 
 void isr_direction() {
