@@ -1,17 +1,19 @@
 /*
-Peet Bros. anemometer interface.
+Peet Bros. (PRO) anemometer interface.
 
-Read the wind speed and direction from two input pins, do some math, and
-output this over Serial as NMEA0183.
+Read the wind speed and direction interrupts from two input pins, do some math,
+and output this over Serial as NMEA0183.
 
 The anemometer itself is designed so that the two inputs does not signal
 at the same time. We can use simple non-interruptable interrupts and still
-be sure not to lose any events.
+be pretty sure not to lose any events.
 
 Useful resources:
     http://arduino.cc/en/Tutorial/DigitalPins
     http://learn.parallax.com/reed-switch-arduino-demo
     http://www.agrolan.co.il/UploadProductFiles/AWVPRO.pdf
+
+http://www.peetbros.com/shop/item.aspx?itemid=137
 
 Remaining:
 * power saving, it uses ~40mA on an Uno now.
