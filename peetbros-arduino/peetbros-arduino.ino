@@ -80,13 +80,26 @@ void print_debug(struct sample *s) {
 // 370 grader er
 //}
 
+void nmea_checksum(char *input, char *output) {
+  char *ptr = input;
+  int checksum = 0;
+ 
+  while (*ptr != '\0') {
+    checksum ^= *ptr;
+    ptr++;
+  }
+  snprintf(output, 6, "*%02x\n", checksum);
+  for (int i=0; i < strlen(output); i++)
+    output[i] = toupper(output[i]);
+}
+
 void output_nmea(float wspeed, float wdirection) {
-  Serial.print("$$MWV,");
-  Serial.print(wdirection);
-  Serial.print(",R,");
-  Serial.print(wspeed);
-  Serial.println(",K,A");
-  //  Serial.println("*hh");
+  char output[255], sumstr[6];
+  (void)snprintf(output, 255, "$MWN,%.2f,R,%.2f,K,A", wdirection, wspeed);
+  nmea_checksum((char *)&output, (char *)&sumstr);
+  Serial.print("$");
+  Serial.print(output);
+  Serial.print(sumstr);
 }
 
 int norm_to_degrees(float norm) {
