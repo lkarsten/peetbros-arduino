@@ -22,9 +22,6 @@ Author: Lasse Karstensen <lasse.karstensen@gmail.com>, February 2015.
 */
 
 #include <limits.h>
-#include <assert.h>
-#include <avr/power.h>
-#include <avr/sleep.h>
 
 #define SAMPLE_WINDOW 8
 #define REPORT_PERIOD 500
@@ -49,7 +46,7 @@ void setup() {
     else
       samples[i].prev = &samples[i - 1];
   }
-  
+
   Serial.begin(57600);
   pinMode(2, INPUT_PULLUP);
   pinMode(3, INPUT_PULLUP);
@@ -116,18 +113,19 @@ void compute_averages(int depth, struct sample *avg) {
   avg->direction_latency /= float(i);
 }
 
+
 void loop() {
-  // The interrupts will update the global counters. Report what we know when there is something new.
+  // The interrupts will update the global counters. Report what we know.
   unsigned long t0 = millis();
   struct sample averages;
 
   // noInterrupts();
   compute_averages(5, &averages);
   // interrupts();
-  
+
   print_debug(&averages);
   print_debug(&samples[sample_index]);
-  
+
   // magic constants everywhere. this is in knots.
   float current_windspeed = 1000.0 * (1.0 / averages.rotation_took);
   float normalised_direction = averages.direction_latency / averages.rotation_took;
@@ -149,15 +147,15 @@ void isr_rotated() {
     last_rotation_took = now + (ULONG_MAX - last_rotation_at);
   else
     last_rotation_took = now - last_rotation_at;
-    
+
   // I'd love to log this somewhere, but ISR...
   if (last_rotation_took < 0.0)
     last_rotation_took = 0.0;
 
   // spurious interrupt? ignore it.
-  // (these are probably an artifact of the push button used for development)  
+  // (these are probably an artifact of the push button used for development)
   if (last_rotation_took < 2.01) return;
- 
+
   last_rotation_at = now;
 
   if (sample_index + 1 < SAMPLE_WINDOW)
