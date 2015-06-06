@@ -97,7 +97,7 @@ float wdir_to_degrees() {
   float phaseshift = float(direction_latency0) / avg_rotation_time;
   // Serial.print(" ms; "); Serial.print(phaseshift);
   
-  if (isnan(phaseshift) || isinf(phaseshift)) windangle = INFINITY;
+  if (isnan(phaseshift) || isinf(phaseshift)) windangle = NAN;
   else if (phaseshift == 0.0) windangle = 360.0;
   else if (phaseshift > 0.99) windangle = 360.0;
   else windangle = 360.0 * phaseshift;
@@ -112,9 +112,13 @@ void expire_stale(unsigned long now) {
    unsigned increase_with = 500;
    unsigned cutoff = 30*1000; // ms
    
+   // float increase_half = int(float(increase_with) / 2.0);
+   
    if (last_rotation_at + reduce_after < now) {
-      if (rotation_took0 + increase_with < UINT_MAX-1) rotation_took0 = rotation_took0 + increase_with;
-      if (rotation_took1 + increase_with < UINT_MAX-1) rotation_took1 = rotation_took0 + increase_with;
+      if (rotation_took0 + increase_with < UINT_MAX-1) rotation_took0 += increase_with;
+      if (rotation_took1 + increase_with < UINT_MAX-1) rotation_took1 += increase_with;
+      // if (direction_latency0 + increase_half < UINT_MAX-1) direction_latency0 += increase_half;
+      // if (direction_latency1 + increase_half < UINT_MAX-1) direction_latency1 += increase_half;
    }
    if (last_rotation_at + 30000 < now) {
      rotation_took0 = UINT_MAX-1;
@@ -128,11 +132,15 @@ void loop() {
   unsigned long t0 = millis();
   
   noInterrupts();
-  print_debug();
+  // print_debug();
   expire_stale(t0);
   float wspeed = wspeed_to_real();
   int awa = wdir_to_degrees();
   interrupts();
+  
+  Serial.print("windspeed="); Serial.print(wspeed);
+  Serial.print(";direction="); Serial.print(awa);
+  Serial.println(";");
 
   delay(REPORT_PERIOD - (millis() - t0));
 }
@@ -168,7 +176,7 @@ void isr_rotated() {
   rotation_took0 = last_rotation_took;
   
   direction_latency1 = direction_latency0;
-  direction_latency0 = INFINITY;
+  direction_latency0 = NAN;
 }
 
 /*
@@ -178,8 +186,6 @@ void isr_rotated() {
  * passed. By counting how far into the rotation (assumed to be == last rotation)
  * we can compute the angle.
  *
- * Alters global state:
- *   samples[sample_index].direction_latency
 */
 void isr_direction() {
   unsigned long now = millis();
