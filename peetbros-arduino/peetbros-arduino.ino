@@ -82,17 +82,17 @@ void output_nmea(int wspeed, int wdirection) {
 */
 
 void print_debug() {
-  Serial.print(" since last rotation: ");
+  Serial.print("since last_rot: ");
   Serial.print(millis() - last_rotation_at);
   Serial.print("ms; ");
-  Serial.print(" last duration: ");
+  Serial.print(" last dur: ");
   Serial.print(rotation_took0);
-  Serial.print("ms; last dir_latency: ");
+  Serial.print("ms; last dir_lat: ");
   Serial.print(direction_latency0);
   Serial.print("ms; ");
-  Serial.print("windspeed: ");
+  Serial.print("wspeed: ");
   Serial.print(timedelta_to_real());
-  Serial.print(" knots; ");
+  Serial.print(" kts; ");
   Serial.println();
 }
 
@@ -109,8 +109,12 @@ float timedelta_to_real() {
   else if (r0 < 66.332) mph = 0.1104*r1 - 9.5685*r0 + 329.87;
   else mph = 0.0; // As good a fallback as any.
   
+  if (isinf(mph) || isnan(mph)) return(0.0);
+  
   float meters_per_second = mph * 0.48037;
   float knots = mph * 0.86897;
+  
+  
   
   // Serial.print("real is: "); Serial.println(knots);
   return(knots);
