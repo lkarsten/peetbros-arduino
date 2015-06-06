@@ -109,14 +109,11 @@ float timedelta_to_real() {
   else if (r0 < 66.332) mph = 0.1104*r1 - 9.5685*r0 + 329.87;
   else mph = 0.0; // As good a fallback as any.
   
-  if (isinf(mph) || isnan(mph)) return(0.0);
+  if (isinf(mph) || isnan(mph) || mph < 0.0) return(0.0);
   
   float meters_per_second = mph * 0.48037;
   float knots = mph * 0.86897;
   
-  
-  
-  // Serial.print("real is: "); Serial.println(knots);
   return(knots);
 }
 
@@ -128,6 +125,23 @@ float norm_to_degrees(unsigned int norm) {
   return (td);
 }
 
+void expire_stale(unsigned long now) {
+   // Expire sensor data if we haven't gotten any for a while.
+   unsigned reduce_after = 5000; // ms
+   unsigned increase_with = 500;
+   unsigned cutoff = 30*1000; // ms
+   
+   if (last_rotation_at + reduce_after < now) {
+      if (rotation_took0 + increase_with < UINT_MAX-1) rotation_took0 = rotation_took0 + increase_with;
+      if (rotation_took1 + increase_with < UINT_MAX-1) rotation_took1 = rotation_took0 + increase_with;
+   }
+   if (last_rotation_at + 30000 < now) {
+     rotation_took0 = UINT_MAX-1;
+     rotation_took1 = UINT_MAX-1;     
+   }
+}
+
+
 void loop() {
   // The interrupts will update the global counters. Report what we know.
   unsigned long t0 = millis();  
@@ -135,7 +149,8 @@ void loop() {
   //debug_samples(samples);
   //compute_averages(3, &averages);
   print_debug();
-  timedelta_to_real();
+  expire_stale(t0);
+  float wspeed = timedelta_to_real();
   interrupts();
   /*  180 er 0.32?
       ca 210 var 0.41?
