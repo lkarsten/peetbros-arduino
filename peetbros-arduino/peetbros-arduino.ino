@@ -90,23 +90,29 @@ void print_debug() {
   Serial.print("ms; last dir_latency: ");
   Serial.print(direction_latency0);
   Serial.print("ms; ");
+  Serial.print("windspeed: ");
+  Serial.print(timedelta_to_real());
+  Serial.print(" knots; ");
   Serial.println();
 }
 
 float timedelta_to_real() {
   float mph;
   
-  if (rotation_took0 < 0.010) mph = 0.0;
-  else if (rotation_took0 < 3.229) mph = -0.1095*rotation_took1 + 2.9318*rotation_took0 - 0.1412;
-  else if (rotation_took0 < 54.362) mph = 0.0052*rotation_took1 + 2.1980*rotation_took0 + 1.1091;
-  else if (rotation_took0 < 66.332) mph = 0.1104*rotation_took1 - 9.5685*rotation_took0 + 329.87;
-  else mph = 0.0; // no idea
+  // cast to avoid rewriting documented formulas.
+  float r0 = 1.0 / (rotation_took0 / 1000.0);
+  float r1 = 1.0 / (rotation_took1 / 1000.0);
+  
+  if (r0 < 0.010) mph = 0.0;
+  else if (r0 < 3.229) mph = -0.1095*r1 + 2.9318*r0 - 0.1412;
+  else if (r0 < 54.362) mph = 0.0052*r1 + 2.1980*r0 + 1.1091;
+  else if (r0 < 66.332) mph = 0.1104*r1 - 9.5685*r0 + 329.87;
+  else mph = 0.0; // As good a fallback as any.
   
   float meters_per_second = mph * 0.48037;
   float knots = mph * 0.86897;
   
-  Serial.print("real is: ");
-  Serial.println(mph);
+  // Serial.print("real is: "); Serial.println(knots);
   return(knots);
 }
 
