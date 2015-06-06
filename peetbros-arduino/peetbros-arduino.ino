@@ -31,8 +31,8 @@ Author: Lasse Karstensen <lasse.karstensen@gmail.com>, February 2015.
 
 volatile unsigned int rotation_took0;
 volatile unsigned int rotation_took1;
-volatile unsigned int direction_latency0;
-volatile unsigned int direction_latency1;
+volatile signed int direction_latency0;
+volatile signed int direction_latency1;
 volatile unsigned long last_rotation_at = millis();
 unsigned long last_report = millis();
 
@@ -64,10 +64,19 @@ void print_debug() {
   Serial.println();
 }
 
-float wspeed_to_real() {
-  float mph = 0.0;
+bool valid_sensordata() {
+  // XXX: wrapping timers?
+  if (last_rotation_at + 10*1000 < millis()) return(false);
+  else return(true);
+}  
   
-  // cast to avoid rewriting documented formulas.
+
+float wspeed_to_real() {
+  float mph = NAN;
+
+  if (!valid_sensordata()) return(NAN);
+  
+  // avoid rewriting documented formulas.
   float r0 = 1.0 / (rotation_took0 / 1000.0);
   float r1 = 1.0 / (rotation_took1 / 1000.0);
   
@@ -76,7 +85,7 @@ float wspeed_to_real() {
   else if (r0 < 54.362) mph = 0.0052*r1 + 2.1980*r0 + 1.1091;
   else if (r0 < 66.332) mph = 0.1104*r1 - 9.5685*r0 + 329.87;
   
-  if (isinf(mph) || isnan(mph) || mph < 0.0) return(0.0);
+  if (isinf(mph) || isnan(mph) || mph < 0.0) return(NAN);
   
   float meters_per_second = mph * 0.48037;
   float knots = mph * 0.86897;
@@ -85,13 +94,12 @@ float wspeed_to_real() {
 }
 
 float wdir_to_degrees() {
-   float windangle; 
-   /*  180 er 0.32?
-      ca 210 var 0.41?
-      ca 160 var 0.26
-      anta: 090 er 0.01? */
+  float windangle;
   
-  float avg_rotation_time = (float(rotation_took0) + float(rotation_took1) / 2.0);
+  if (!valid_sensordata()) return(NAN);
+  if (direction_latency0 < 0) return(NAN);
+  
+  float avg_rotation_time = ((float(rotation_took0) + float(rotation_took1)) / 2.0);
   // Serial.println(); Serial.print(avg_rotation_time);
   
   float phaseshift = float(direction_latency0) / avg_rotation_time;
@@ -106,25 +114,6 @@ float wdir_to_degrees() {
   return(windangle);
 }
 
-void expire_stale(unsigned long now) {
-   // Expire sensor data if we haven't gotten any for a while.
-   unsigned reduce_after = 5000; // ms
-   unsigned increase_with = 500;
-   unsigned cutoff = 30*1000; // ms
-   
-   // float increase_half = int(float(increase_with) / 2.0);
-   
-   if (last_rotation_at + reduce_after < now) {
-      if (rotation_took0 + increase_with < UINT_MAX-1) rotation_took0 += increase_with;
-      if (rotation_took1 + increase_with < UINT_MAX-1) rotation_took1 += increase_with;
-      // if (direction_latency0 + increase_half < UINT_MAX-1) direction_latency0 += increase_half;
-      // if (direction_latency1 + increase_half < UINT_MAX-1) direction_latency1 += increase_half;
-   }
-   if (last_rotation_at + 30000 < now) {
-     rotation_took0 = UINT_MAX-1;
-     rotation_took1 = UINT_MAX-1;     
-   }
-}
 
 
 void loop() {
@@ -133,9 +122,8 @@ void loop() {
   
   noInterrupts();
   // print_debug();
-  expire_stale(t0);
   float wspeed = wspeed_to_real();
-  int awa = wdir_to_degrees();
+  float awa = wdir_to_degrees();
   interrupts();
   
   Serial.print("windspeed="); Serial.print(wspeed);
@@ -176,7 +164,7 @@ void isr_rotated() {
   rotation_took0 = last_rotation_took;
   
   direction_latency1 = direction_latency0;
-  direction_latency0 = NAN;
+  direction_latency0 = -1;
 }
 
 /*
