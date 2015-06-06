@@ -22,22 +22,12 @@ Connectors used:
 
 Remaining:
 * power saving, it uses ~40mA on an Uno now.
-* calibration!
 
 Author: Lasse Karstensen <lasse.karstensen@gmail.com>, February 2015.
 */
-
 #include <limits.h>
 
 #define REPORT_PERIOD 1000
-
-
-// All time deltas are in milliseconds.
-struct sample {
-  unsigned int rotation_took;
-  unsigned int direction_latency;
-  struct sample *prev;
-};
 
 volatile unsigned int rotation_took0;
 volatile unsigned int rotation_took1;
@@ -60,44 +50,22 @@ void setup() {
   Serial.begin(115200);
 }
 
-/*
-void nmea_checksum(char *input, char *output) {
-  char *ptr = input;
-  int checksum = 0;
-  
-  while (*(ptr++) != '\0')
-    checksum ^= *ptr;
-  snprintf(output, 6, "*%02X\n", checksum);
-}
-
-void output_nmea(int wspeed, int wdirection) {
-  char output[255];
-  // char sumstr[6];
-  snprintf(output, 255, "$$MWN,%i,R,%i,K,A", wdirection, wspeed);
-  // nmea_checksum((char *)&output, (char *)&sumstr);
-  // Serial.print("$");
-  Serial.print(output);
-  // Serial.print(sumstr);
-}
-*/
-
 void print_debug() {
   Serial.print("since last_rot: ");
-  Serial.print(millis() - last_rotation_at);
-  Serial.print("ms; ");
-  Serial.print(" last dur: ");
-  Serial.print(rotation_took0);
-  Serial.print("ms; last dir_lat: ");
-  Serial.print(direction_latency0);
-  Serial.print("ms; ");
+  Serial.print(millis() - last_rotation_at); Serial.print("ms; ");
+  Serial.print("last dur: ");
+  Serial.print(rotation_took0); Serial.print("ms; ");
   Serial.print("wspeed: ");
-  Serial.print(timedelta_to_real());
-  Serial.print(" kts; ");
+  Serial.print(wspeed_to_real()); Serial.print("kts; ");
+  Serial.print("last dir_lat: ");
+  Serial.print(direction_latency0); Serial.print("ms; ");
+  Serial.print("wdir: ");
+  Serial.print(wdir_to_degrees()); Serial.print(" degrees; ");
   Serial.println();
 }
 
-float timedelta_to_real() {
-  float mph;
+float wspeed_to_real() {
+  float mph = 0.0;
   
   // cast to avoid rewriting documented formulas.
   float r0 = 1.0 / (rotation_took0 / 1000.0);
@@ -107,7 +75,6 @@ float timedelta_to_real() {
   else if (r0 < 3.229) mph = -0.1095*r1 + 2.9318*r0 - 0.1412;
   else if (r0 < 54.362) mph = 0.0052*r1 + 2.1980*r0 + 1.1091;
   else if (r0 < 66.332) mph = 0.1104*r1 - 9.5685*r0 + 329.87;
-  else mph = 0.0; // As good a fallback as any.
   
   if (isinf(mph) || isnan(mph) || mph < 0.0) return(0.0);
   
@@ -117,12 +84,26 @@ float timedelta_to_real() {
   return(knots);
 }
 
-float norm_to_degrees(unsigned int norm) {
-  float td;
-  // Do ourselves the service of representing 000 degrees as 360.
-  td = float(norm) * 360.0;
-  if (td < 1.0) td += 360.0;
-  return (td);
+float wdir_to_degrees() {
+   float windangle; 
+   /*  180 er 0.32?
+      ca 210 var 0.41?
+      ca 160 var 0.26
+      anta: 090 er 0.01? */
+  
+  float avg_rotation_time = (float(rotation_took0) + float(rotation_took1) / 2.0);
+  // Serial.println(); Serial.print(avg_rotation_time);
+  
+  float phaseshift = float(direction_latency0) / avg_rotation_time;
+  // Serial.print(" ms; "); Serial.print(phaseshift);
+  
+  if (isnan(phaseshift) || isinf(phaseshift)) windangle = INFINITY;
+  else if (phaseshift == 0.0) windangle = 360.0;
+  else if (phaseshift > 0.99) windangle = 360.0;
+  else windangle = 360.0 * phaseshift;
+  
+  // Serial.print( " or "); Serial.print(awa); Serial.println(" degrees."); 
+  return(windangle);
 }
 
 void expire_stale(unsigned long now) {
@@ -144,18 +125,15 @@ void expire_stale(unsigned long now) {
 
 void loop() {
   // The interrupts will update the global counters. Report what we know.
-  unsigned long t0 = millis();  
+  unsigned long t0 = millis();
+  
   noInterrupts();
-  //debug_samples(samples);
-  //compute_averages(3, &averages);
   print_debug();
   expire_stale(t0);
-  float wspeed = timedelta_to_real();
+  float wspeed = wspeed_to_real();
+  int awa = wdir_to_degrees();
   interrupts();
-  /*  180 er 0.32?
-      ca 210 var 0.41?
-      ca 160 var 0.26
-      anta: 090 er 0.01? */
+
   delay(REPORT_PERIOD - (millis() - t0));
 }
 
@@ -190,7 +168,7 @@ void isr_rotated() {
   rotation_took0 = last_rotation_took;
   
   direction_latency1 = direction_latency0;
-  direction_latency0 = 0;
+  direction_latency0 = INFINITY;
 }
 
 /*
