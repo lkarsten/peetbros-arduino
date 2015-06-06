@@ -93,6 +93,22 @@ void print_debug() {
   Serial.println();
 }
 
+float timedelta_to_real() {
+  float mph;
+  
+  if (rotation_took0 < 0.010) mph = 0.0;
+  else if (rotation_took0 < 3.229) mph = -0.1095*rotation_took1 + 2.9318*rotation_took0 - 0.1412;
+  else if (rotation_took0 < 54.362) mph = 0.0052*rotation_took1 + 2.1980*rotation_took0 + 1.1091;
+  else if (rotation_took0 < 66.332) mph = 0.1104*rotation_took1 - 9.5685*rotation_took0 + 329.87;
+  else mph = 0.0; // no idea
+  
+  float meters_per_second = mph * 0.48037;
+  float knots = mph * 0.86897;
+  
+  Serial.print("real is: ");
+  Serial.println(mph);
+  return(knots);
+}
 
 float norm_to_degrees(unsigned int norm) {
   float td;
@@ -102,25 +118,19 @@ float norm_to_degrees(unsigned int norm) {
   return (td);
 }
 
-
 void loop() {
   // The interrupts will update the global counters. Report what we know.
-  unsigned long t0 = millis();
-  
+  unsigned long t0 = millis();  
   noInterrupts();
   //debug_samples(samples);
   //compute_averages(3, &averages);
   print_debug();
+  timedelta_to_real();
   interrupts();
-
-  //Serial.println("direction=100.2;speed=5.00;");
-    // float normalised_direction = float(averages.direction_latency) / float(averages.rotation_took); // XXX
   /*  180 er 0.32?
       ca 210 var 0.41?
       ca 160 var 0.26
       anta: 090 er 0.01? */
-  //output_nmea(current_windspeed, normalised_direction);
-  //norm_to_degrees(normalised_direction));
   delay(REPORT_PERIOD - (millis() - t0));
 }
 
@@ -131,7 +141,6 @@ void loop() {
  * We can find the wind speed by calculating how long the complete
  * rotation took.
 */
-
 void isr_rotated() {
   unsigned long now = millis();
   unsigned int last_rotation_took;
