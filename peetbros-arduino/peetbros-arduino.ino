@@ -29,8 +29,8 @@ Author: Lasse Karstensen <lasse.karstensen@gmail.com>, February 2015.
 
 #include <limits.h>
 
-#define SAMPLE_WINDOW 8
 #define REPORT_PERIOD 1000
+
 
 // All time deltas are in milliseconds.
 struct sample {
@@ -39,9 +39,11 @@ struct sample {
   struct sample *prev;
 };
 
-struct sample samples[SAMPLE_WINDOW];
+volatile unsigned int rotation_took0;
+volatile unsigned int rotation_took1;
+volatile unsigned int direction_latency0;
+volatile unsigned int direction_latency1;
 volatile unsigned long last_rotation_at = millis();
-volatile unsigned int sample_index = 0;
 unsigned long last_report = millis();
 
 void setup() {
@@ -50,16 +52,11 @@ void setup() {
   attachInterrupt(0, isr_rotated, RISING); // pin2 is int0.
   attachInterrupt(1, isr_direction, RISING); // pin3 is int1.
 
-  // Null everything out initially.
-  for (int i = 0; i < SAMPLE_WINDOW; i++) {
-    samples[i].rotation_took = 0;
-    samples[i].direction_latency = 0;
-    if (i == 0)
-      samples[i].prev = &samples[SAMPLE_WINDOW];
-    else
-      samples[i].prev = &samples[i - 1];
-  }
-  
+  rotation_took0 = 0;
+  rotation_took1 = 0;
+  direction_latency0 = 0;
+  direction_latency1 = 0;
+ 
   Serial.begin(115200);
 }
 
@@ -84,50 +81,18 @@ void output_nmea(int wspeed, int wdirection) {
 }
 */
 
-void debug_samples(struct sample samples[]) {
-  char foo[200];
-  int i;
-  for (i = 0; i < SAMPLE_WINDOW; i++) {
-    snprintf((char *)&foo, 200, "%i %i %i %s", i,
-             samples[i].rotation_took,
-             samples[i].direction_latency,
-             sample_index == i ? "current" : "");
-    Serial.println(foo);
-  }
-}
-
-void print_debug(struct sample *s) {
+void print_debug() {
   Serial.print(" since last rotation: ");
   Serial.print(millis() - last_rotation_at);
   Serial.print("ms; ");
-  Serial.print("sampleindex: "); Serial.print(sample_index);
   Serial.print(" last duration: ");
-  Serial.print(s->rotation_took);
+  Serial.print(rotation_took0);
   Serial.print("ms; last dir_latency: ");
-  Serial.print(s->direction_latency);
+  Serial.print(direction_latency0);
   Serial.print("ms; ");
   Serial.println();
 }
 
-
-void compute_averages(int depth, struct sample *avg) {
-  // Remember to disable interrupts before calling.
-  struct sample *curr;
-  // = &samples[sample_index];
-
-  int i = 0;
-  for (i = 0; i < depth; i++) {
-    curr = &samples[i];
-
-    avg->rotation_took += curr->rotation_took;
-    avg->direction_latency += curr->direction_latency;
-
-    curr = curr->prev;
-    if (curr == NULL) break;
-  }
-  avg->rotation_took /= i;
-  avg->direction_latency /= i;
-}
 
 float norm_to_degrees(unsigned int norm) {
   float td;
@@ -141,19 +106,14 @@ float norm_to_degrees(unsigned int norm) {
 void loop() {
   // The interrupts will update the global counters. Report what we know.
   unsigned long t0 = millis();
-  struct sample averages = {0, 0, NULL};
   
   noInterrupts();
   //debug_samples(samples);
   //compute_averages(3, &averages);
-  print_debug(&samples[sample_index]);
+  print_debug();
   interrupts();
-   
+
   //Serial.println("direction=100.2;speed=5.00;");
-    // magic constants everywhere. this is in knots.
-  /* int current_windspeed = 6000; // divide by 1000 to get real value in knots.
-  int normalised_direction = 800; // parts per thousand.
-  current_windspeed = trunc(1000 * 1000 * (1.0 / averages.rotation_took));
     // float normalised_direction = float(averages.direction_latency) / float(averages.rotation_took); // XXX
   /*  180 er 0.32?
       ca 210 var 0.41?
@@ -161,7 +121,6 @@ void loop() {
       anta: 090 er 0.01? */
   //output_nmea(current_windspeed, normalised_direction);
   //norm_to_degrees(normalised_direction));
- 
   delay(REPORT_PERIOD - (millis() - t0));
 }
 
@@ -171,12 +130,8 @@ void loop() {
  * 
  * We can find the wind speed by calculating how long the complete
  * rotation took.
- *
- * Alters global variable:
- *   last_rotation_at
- *   sample_index
- *   samples[sample_index]
 */
+
 void isr_rotated() {
   unsigned long now = millis();
   unsigned int last_rotation_took;
@@ -197,13 +152,11 @@ void isr_rotated() {
 
   last_rotation_at = now;
 
-  if (sample_index + 1 < SAMPLE_WINDOW)
-    sample_index += 1;
-  else
-    sample_index = 0;
-
-  samples[sample_index].rotation_took = last_rotation_took;
-  samples[sample_index].direction_latency = 0; // Clean out old value.
+  rotation_took1 = rotation_took0;
+  rotation_took0 = last_rotation_took;
+  
+  direction_latency1 = direction_latency0;
+  direction_latency0 = 0;
 }
 
 /*
@@ -224,6 +177,6 @@ void isr_direction() {
     direction_latency = now + (ULONG_MAX - last_rotation_at);
   else
     direction_latency = now - last_rotation_at;
-
-  samples[sample_index].direction_latency = direction_latency;
+    
+  direction_latency0 = direction_latency;
 }
