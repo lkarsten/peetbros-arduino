@@ -126,9 +126,10 @@ void loop() {
   float awa = wdir_to_degrees();
   interrupts();
   
-  Serial.print("windspeed="); Serial.print(wspeed);
-  Serial.print(";direction="); Serial.print(awa);
-  Serial.println(";");
+  Serial.print("w:");
+  Serial.print(wspeed);
+  Serial.print(" kts;"); Serial.print(awa);
+  Serial.println("");
 
   delay(REPORT_PERIOD - (millis() - t0));
 }
