@@ -68,49 +68,49 @@ bool valid_sensordata() {
   // XXX: wrapping timers?
   if (last_rotation_at + 10*1000 < millis()) return(false);
   else return(true);
-}  
-  
+}
+
 
 float wspeed_to_real() {
   float mph = NAN;
 
   if (!valid_sensordata()) return(NAN);
-  
+
   // avoid rewriting documented formulas.
   float r0 = 1.0 / (rotation_took0 / 1000.0);
   float r1 = 1.0 / (rotation_took1 / 1000.0);
-  
+
   if (r0 < 0.010) mph = 0.0;
   else if (r0 < 3.229) mph = -0.1095*r1 + 2.9318*r0 - 0.1412;
   else if (r0 < 54.362) mph = 0.0052*r1 + 2.1980*r0 + 1.1091;
   else if (r0 < 66.332) mph = 0.1104*r1 - 9.5685*r0 + 329.87;
-  
+
   if (isinf(mph) || isnan(mph) || mph < 0.0) return(NAN);
-  
+
   float meters_per_second = mph * 0.48037;
   float knots = mph * 0.86897;
-  
+
   return(knots);
 }
 
 float wdir_to_degrees() {
   float windangle;
-  
+
   if (!valid_sensordata()) return(NAN);
   if (direction_latency0 < 0) return(NAN);
-  
+
   float avg_rotation_time = ((float(rotation_took0) + float(rotation_took1)) / 2.0);
   // Serial.println(); Serial.print(avg_rotation_time);
-  
+
   float phaseshift = float(direction_latency0) / avg_rotation_time;
   // Serial.print(" ms; "); Serial.print(phaseshift);
-  
+
   if (isnan(phaseshift) || isinf(phaseshift)) windangle = NAN;
   else if (phaseshift == 0.0) windangle = 360.0;
   else if (phaseshift > 0.99) windangle = 360.0;
   else windangle = 360.0 * phaseshift;
-  
-  // Serial.print( " or "); Serial.print(awa); Serial.println(" degrees."); 
+
+  // Serial.print( " or "); Serial.print(awa); Serial.println(" degrees.");
   return(windangle);
 }
 
@@ -119,13 +119,13 @@ float wdir_to_degrees() {
 void loop() {
   // The interrupts will update the global counters. Report what we know.
   unsigned long t0 = millis();
-  
+
   noInterrupts();
   // print_debug();
   float wspeed = wspeed_to_real();
   float awa = wdir_to_degrees();
   interrupts();
-  
+
   Serial.print("w:");
   Serial.print(wspeed);
   Serial.print(" kts;"); Serial.print(awa);
@@ -137,7 +137,7 @@ void loop() {
 /*
  * Interrupt called when the rotating part of the wind instrument
  * has completed one rotation.
- * 
+ *
  * We can find the wind speed by calculating how long the complete
  * rotation took.
 */
@@ -163,7 +163,7 @@ void isr_rotated() {
 
   rotation_took1 = rotation_took0;
   rotation_took0 = last_rotation_took;
-  
+
   direction_latency1 = direction_latency0;
   direction_latency0 = -1;
 }
@@ -184,6 +184,6 @@ void isr_direction() {
     direction_latency = now + (ULONG_MAX - last_rotation_at);
   else
     direction_latency = now - last_rotation_at;
-    
+
   direction_latency0 = direction_latency;
 }
