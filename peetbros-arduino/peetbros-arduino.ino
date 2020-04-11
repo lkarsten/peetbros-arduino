@@ -85,7 +85,7 @@ float wspeed_to_real() {
   else if (r0 < 54.362) mph = 0.0052*r1 + 2.1980*r0 + 1.1091;
   else if (r0 < 66.332) mph = 0.1104*r1 - 9.5685*r0 + 329.87;
 
-  if (isinf(mph) || isnan(mph) || mph < 0.0) return(NAN);
+  if (isinf(mph) || isnan(mph) || mph < 0.0) return(NAN);
 
   float meters_per_second = mph * 0.48037;
   float knots = mph * 0.86897;
@@ -105,7 +105,7 @@ float wdir_to_degrees() {
   float phaseshift = float(direction_latency0) / avg_rotation_time;
   // Serial.print(" ms; "); Serial.print(phaseshift);
 
-  if (isnan(phaseshift) || isinf(phaseshift)) windangle = NAN;
+  if (isnan(phaseshift) || isinf(phaseshift)) windangle = NAN;
   else if (phaseshift == 0.0) windangle = 360.0;
   else if (phaseshift > 0.99) windangle = 360.0;
   else windangle = 360.0 * phaseshift;
